@@ -1,4 +1,13 @@
 from subprocess import check_call
+import os
+import tempfile
+import zipfile
+
+try:
+    standard_scripts = os.environ['HAIL_SCRIPTS'].split(':')
+except Exception:
+    standard_scripts = None
+
 
 def init_parser(parser):
     parser.add_argument('name', type=str, help='Cluster name.')
@@ -12,9 +21,28 @@ def main(args):
     print("Submitting to cluster '{}'...".format(args.name))
 
     # create files argument
-    files = ''
+    files = []
     if args.files:
-        files = args.files
+        files.extend(args.files.split(','))
+    if standard_scripts:
+        files.extend(standard_scripts)
+    if files:
+        tfile = tempfile.mkstemp(suffix='.zip', prefix='pyscripts_')[1]
+        zipf = zipfile.ZipFile(tfile, 'w', zipfile.ZIP_DEFLATED)
+        for hail_script_entry in files:
+            if hail_script_entry.endswith('.py'):
+                zipf.write(hail_script_entry, arcname=os.path.basename(hail_script_entry))
+            else:
+                for root, _, files in os.walk(hail_script_entry):
+                    for pyfile in files:
+                        if pyfile.endswith('.py'):
+                            zipf.write(os.path.join(root, pyfile),
+                                       os.path.relpath(os.path.join(root, pyfile),
+                                                       os.path.join(hail_script_entry, '..')))
+        zipf.close()
+        files = tfile
+    else:
+        files = ''
 
     # create properties argument
     properties = ''
